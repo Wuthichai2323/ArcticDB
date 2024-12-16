@@ -6,9 +6,7 @@
  */
 
 #include <arcticdb/storage/s3/nfs_backed_storage.hpp>
-
-
-#include "arcticdb/storage/mock/s3_mock_client.hpp"
+#include <arcticdb/storage/mock/s3_mock_client.hpp>
 #include <arcticdb/storage/s3/s3_storage.hpp>
 #include <arcticdb/storage/s3/s3_client_impl.hpp>
 #include <arcticdb/storage/s3/s3_client_interface.hpp>

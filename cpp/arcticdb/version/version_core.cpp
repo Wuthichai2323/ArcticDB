@@ -399,8 +399,24 @@ folly::Future<ReadVersionOutput> read_multi_key(
     });
 }
 
-size_t generate_scheduling_iterations(const std::vector<std::shared_ptr<Clause>>& clauses) {
-    size_t res{1};
+void add_slice_to_component_manager(
+        EntityId entity_id,
+        pipelines::SegmentAndSlice& segment_and_slice,
+        std::shared_ptr<ComponentManager> component_manager,
+        size_t fetch_count) {
+    ARCTICDB_DEBUG(log::memory(), "Adding entity id {}", entity_id);
+    component_manager->add_entity(
+        entity_id,
+        std::make_shared<SegmentInMemory>(std::move(segment_and_slice.segment_in_memory_)),
+        std::make_shared<RowRange>(std::move(segment_and_slice.ranges_and_key_.row_range_)),
+        std::make_shared<ColRange>(std::move(segment_and_slice.ranges_and_key_.col_range_)),
+        std::make_shared<AtomKey>(std::move(segment_and_slice.ranges_and_key_.key_)),
+        fetch_count
+    );
+}
+
+size_t num_scheduling_iterations(const std::vector<std::shared_ptr<Clause>>& clauses) {
+    size_t res = 0;
     auto it = std::next(clauses.cbegin());
     while (it != clauses.cend()) {
         auto prev_it = std::prev(it);
@@ -409,6 +425,7 @@ size_t generate_scheduling_iterations(const std::vector<std::shared_ptr<Clause>>
         }
         ++it;
     }
+    log::version().info("Processing pipeline has {} scheduling stages after the initial read and process", res);
     return res;
 }
 
@@ -431,13 +448,14 @@ std::pair<std::vector<std::vector<EntityId>>, std::shared_ptr<ankerl::unordered_
         std::shared_ptr<ComponentManager>& component_manager,
         size_t num_segments,
         std::vector<std::vector<size_t>>&& processing_unit_indexes) {
+    // Map from entity id to position in segment_and_slice_futures
+    auto id_to_pos = std::make_shared<ankerl::unordered_dense::map<EntityId, size_t>>();
+    id_to_pos->reserve(num_segments);
+
     // Map from position in segment_and_slice_future_splitters to entity ids
     std::vector<EntityId> pos_to_id;
     pos_to_id.reserve(num_segments);
 
-    // Map from entity id to position in segment_and_slice_futures
-    auto id_to_pos = std::make_shared<ankerl::unordered_dense::map<EntityId, size_t>>();
-    id_to_pos->reserve(num_segments);
 
     auto ids = component_manager->get_new_entity_ids(num_segments);
     for (auto&& [idx, id]: folly::enumerate(ids)) {
@@ -445,23 +463,23 @@ std::pair<std::vector<std::vector<EntityId>>, std::shared_ptr<ankerl::unordered_
         id_to_pos->emplace(id, idx);
     }
 
-    std::vector<std::vector<EntityId>> entity_ids_vec;
-    entity_ids_vec.reserve(processing_unit_indexes.size());
+    std::vector<std::vector<EntityId>> entity_work_units;
+    entity_work_units.reserve(processing_unit_indexes.size());
     for (const auto& indexes: processing_unit_indexes) {
-        entity_ids_vec.emplace_back();
-        entity_ids_vec.back().reserve(indexes.size());
+        entity_work_units.emplace_back();
+        entity_work_units.back().reserve(indexes.size());
         for (auto index: indexes) {
-            entity_ids_vec.back().emplace_back(pos_to_id[index]);
+            entity_work_units.back().emplace_back(pos_to_id[index]);
         }
     }
 
-    return std::make_pair(std::move(entity_ids_vec), std::move(id_to_pos));
+    return std::make_pair(std::move(entity_work_units), std::move(id_to_pos));
 }
 
-std::shared_ptr<std::vector<folly::Future<std::vector<EntityId>>>> add_to_component_manager(
+std::shared_ptr<std::vector<folly::Future<std::vector<EntityId>>>> schedule_first_iteration(
         std::shared_ptr<ComponentManager>& component_manager,
         size_t num_segments,
-        std::vector<std::vector<EntityId>>&& entity_ids_vec,
+        std::vector<std::vector<EntityId>>&& entities_by_work_unit,
         std::shared_ptr<std::vector<EntityFetchCount>>&& segment_fetch_counts,
         std::vector<FutureOrSplitter>&& segment_and_slice_future_splitters,
         std::shared_ptr<ankerl::unordered_dense::map<EntityId, size_t>>&& id_to_pos,
@@ -471,12 +489,13 @@ std::shared_ptr<std::vector<folly::Future<std::vector<EntityId>>>> add_to_compon
     auto slice_added = std::make_shared<std::vector<bool>>(num_segments, false);
     auto futures = std::make_shared<std::vector<folly::Future<std::vector<EntityId>>>>();
 
-    for (auto&& entity_ids: entity_ids_vec) {
+    for (auto&& entity_ids: entities_by_work_unit) {
         std::vector<folly::Future<pipelines::SegmentAndSlice>> local_futs;
         local_futs.reserve(entity_ids.size());
         for (auto id: entity_ids) {
             const auto pos = id_to_pos->at(id);
             auto& future_or_splitter = segment_and_slice_future_splitters[pos];
+            // Some of the entities for this unit of work may be shared with other units of work
             util::variant_match(future_or_splitter,
                 [&local_futs] (folly::Future<pipelines::SegmentAndSlice>& fut) {
                 local_futs.emplace_back(std::move(fut));
@@ -496,14 +515,7 @@ std::shared_ptr<std::vector<folly::Future<std::vector<EntityId>>>> add_to_compon
                         auto pos = id_to_pos->at(entity_id);
                         std::lock_guard<std::mutex> lock((*slice_added_mtx)[pos]);
                         if (!(*slice_added)[pos]) {
-                            component_manager->add_entity(
-                                entity_id,
-                                std::make_shared<SegmentInMemory>(std::move(segment_and_slice.segment_in_memory_)),
-                                std::make_shared<RowRange>(std::move(segment_and_slice.ranges_and_key_.row_range_)),
-                                std::make_shared<ColRange>(std::move(segment_and_slice.ranges_and_key_.col_range_)),
-                                std::make_shared<AtomKey>(std::move(segment_and_slice.ranges_and_key_.key_)),
-                                (*segment_fetch_counts)[pos]
-                            );
+                            add_slice_to_component_manager(entity_id, segment_and_slice, component_manager, (*segment_fetch_counts)[idx]);
                             (*slice_added)[pos] = true;
                         }
                     }
@@ -528,44 +540,41 @@ folly::Future<std::vector<EntityId>> schedule_clause_processing(
 
     auto segment_and_slice_future_splitters = split_futures(std::move(segment_and_slice_futures), *segment_fetch_counts);
 
-    auto [entity_ids_vec, id_to_pos] = get_entity_ids_and_position_map(component_manager, num_segments, std::move(processing_unit_indexes));
+    auto [entities_by_work_unit, entity_id_to_segment_pos] = get_entity_ids_and_position_map(component_manager, num_segments, std::move(processing_unit_indexes));
 
-    auto futures = add_to_component_manager(
+    // At this point we have a set of entity ids grouped by the work units produced by the original structure_for_processing,
+    // and a map of those ids to the position in the vector of futures or future-splitters (which is the same order as
+    // originally generated from the index via the pipeline_context and ranges_and_keys), so we can add each entity id and
+    // its components to the component manager and schedule the first stage of work (i.e. from the beginning until either
+    // the end of the pipeline or the next required structure_for_processing
+    auto futures = schedule_first_iteration(
         component_manager,
         num_segments,
-        std::move(entity_ids_vec),
+        std::move(entities_by_work_unit),
         std::move(segment_fetch_counts),
         std::move(segment_and_slice_future_splitters),
-        std::move(id_to_pos),
+        std::move(entity_id_to_segment_pos),
         clauses);
 
-    auto entity_ids_vec_fut = folly::Future<std::vector<std::vector<EntityId>>>::makeEmpty();
-    // The number of iterations we need to pass through the following loop to get all the work scheduled
-    auto scheduling_iterations = generate_scheduling_iterations(*clauses);
-    for (auto i = 0UL; i < scheduling_iterations; ++i) {
-        folly::Future<folly::Unit> work_scheduled(folly::Unit{});
-        if (i > 0UL) {
-            work_scheduled = entity_ids_vec_fut.via(&async::cpu_executor()).thenValue([clauses, futures](std::vector<std::vector<EntityId>>&& entity_id_vectors) {
-                futures->clear();
-                for (auto&& entity_ids: entity_id_vectors) {
-                    futures->emplace_back(async::submit_cpu_task(async::MemSegmentProcessingTask(*clauses, std::move(entity_ids))));
-                }
-                return folly::Unit{};
-            });
-        }
+    auto entity_ids_vec_fut = folly::collect(*futures).via(&async::io_executor());
 
-        entity_ids_vec_fut = work_scheduled.via(&async::cpu_executor()).thenValue([clauses, futures](auto&&) {
-            return folly::collect(*futures).via(&async::cpu_executor()).thenValue([clauses](std::vector<std::vector<EntityId>>&& entity_id_vectors) {
-                remove_processed_clauses(*clauses);
-                if (clauses->empty()) {
-                    return entity_id_vectors;
-                } else {
-                    return clauses->front()->structure_for_processing(std::move(entity_id_vectors));
-                }
-            });
+    const auto scheduling_iterations = num_scheduling_iterations(*clauses);
+    for (auto i = 0UL; i < scheduling_iterations; ++i) {
+        entity_ids_vec_fut = std::move(entity_ids_vec_fut).thenValue([clauses, scheduling_iterations, i] (std::vector<std::vector<EntityId>>&& entity_id_vectors) {
+            ARCTICDB_RUNTIME_DEBUG(log::memory(), "Scheduling iteration {} of {}", i, scheduling_iterations);
+            remove_processed_clauses(*clauses);
+            util::check(!clauses->empty(), "Scheduling iteration {} has no clauses to process", scheduling_iterations);
+            auto next_units_of_work = clauses->front()->structure_for_processing(std::move(entity_id_vectors));
+            std::vector<folly::Future<std::vector<EntityId>>> work_futures;
+            for(auto&& unit_of_work : next_units_of_work) {
+                ARCTICDB_RUNTIME_DEBUG(log::memory(), "Scheduling work for entity ids: {}", unit_of_work);
+                work_futures.emplace_back(async::submit_cpu_task(async::MemSegmentProcessingTask{*clauses, std::move(unit_of_work)}));
+            }
+            return folly::collect(work_futures).via(&async::io_executor());
         });
     }
-    return entity_ids_vec_fut.via(&async::cpu_executor()).thenValue([](std::vector<std::vector<EntityId>>&& entity_id_vectors) {
+
+    return std::move(entity_ids_vec_fut).thenValueInline([](std::vector<std::vector<EntityId>>&& entity_id_vectors) {
         return flatten_entities(std::move(entity_id_vectors));
     });
 }

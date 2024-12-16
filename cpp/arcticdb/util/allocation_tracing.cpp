@@ -26,7 +26,6 @@ void AllocationTracker::trace() {
         {
             std::lock_guard lock{mutex_};
             ++data_[trace];
-            ++count_;
         }
         top_level_ = true;
     }

@@ -490,9 +490,9 @@ struct MemSegmentProcessingTask : BaseTask {
 
     std::vector<EntityId> operator()() {
         ARCTICDB_DEBUG_THROW(5)
-        auto nanos = util::SysClock::coarse_nanos_since_epoch() - creation_time_;
-        auto time_taken = double(nanos) / BILLION;
-        ARCTICDB_RUNTIME_DEBUG(log::inmem(), "Segment processing task running after {}s queue time", time_taken);
+        const auto nanos_start = util::SysClock::coarse_nanos_since_epoch();
+        const auto time_in_queue = double(nanos_start - creation_time_) / BILLION;
+        ARCTICDB_RUNTIME_DEBUG(log::inmem(), "Segment processing task running after {}s queue time", time_in_queue);
         for (auto it = clauses_.cbegin(); it != clauses_.cend(); ++it) {
             entity_ids_ = (*it)->process(std::move(entity_ids_));
 
@@ -500,6 +500,9 @@ struct MemSegmentProcessingTask : BaseTask {
             if(next_it != clauses_.cend() && (*it)->clause_info().output_structure_ != (*next_it)->clause_info().input_structure_)
                 break;
         }
+        const auto nanos_end = util::SysClock::coarse_nanos_since_epoch();
+        const auto time_taken = double(nanos_end - nanos_start) / BILLION;
+        ARCTICDB_RUNTIME_DEBUG(log::inmem(), "Segment processing task completed after {}s run time", time_taken);
         return std::move(entity_ids_);
     }
 

@@ -27,8 +27,8 @@ class AllocationTracker {
 
     std::unordered_map<std::string, uint64_t> data_;
     std::recursive_mutex mutex_;
-    std::size_t count_ = 0;
     constexpr static int num_levels_ = 3;
+
 public:
     static std::shared_ptr<AllocationTracker> instance();
     static void destroy_instance();
@@ -58,8 +58,6 @@ public:
 };
 
 }
-
-
 
 void* operator new(std::size_t sz);
 

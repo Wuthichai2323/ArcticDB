@@ -5,13 +5,11 @@
  * As of the Change Date specified in that file, in accordance with the Business Source License, use of this software will be governed by the Apache License, version 2.0.
  */
 
-#include "s3_mock_client.hpp"
-#include "arcticdb/storage/s3/s3_client_interface.hpp"
-
-#include "arcticdb/log/log.hpp"
-#include "arcticdb/util/buffer_pool.hpp"
-
-#include "arcticdb/storage/storage_utils.hpp"
+#include <arcticdb/storage/mock/s3_mock_client.hpp>
+#include <arcticdb/storage/s3/s3_client_interface.hpp>
+#include <arcticdb/log/log.hpp>
+#include <arcticdb/util/buffer_pool.hpp>
+#include <arcticdb/storage/storage_utils.hpp>
 
 #include <aws/s3/S3Errors.h>
 
