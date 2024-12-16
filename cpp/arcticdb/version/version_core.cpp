@@ -425,7 +425,7 @@ size_t num_scheduling_iterations(const std::vector<std::shared_ptr<Clause>>& cla
         }
         ++it;
     }
-    log::version().info("Processing pipeline has {} scheduling stages after the initial read and process", res);
+    ARCTICDB_DEBUG(log::memory(), "Processing pipeline has {} scheduling stages after the initial read and process", res);
     return res;
 }
 
