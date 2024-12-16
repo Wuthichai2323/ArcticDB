@@ -456,7 +456,6 @@ std::pair<std::vector<std::vector<EntityId>>, std::shared_ptr<ankerl::unordered_
     std::vector<EntityId> pos_to_id;
     pos_to_id.reserve(num_segments);
 
-
     auto ids = component_manager->get_new_entity_ids(num_segments);
     for (auto&& [idx, id]: folly::enumerate(ids)) {
         pos_to_id.emplace_back(id);
@@ -515,7 +514,7 @@ std::shared_ptr<std::vector<folly::Future<std::vector<EntityId>>>> schedule_firs
                         auto pos = id_to_pos->at(entity_id);
                         std::lock_guard<std::mutex> lock((*slice_added_mtx)[pos]);
                         if (!(*slice_added)[pos]) {
-                            add_slice_to_component_manager(entity_id, segment_and_slice, component_manager, (*segment_fetch_counts)[idx]);
+                            add_slice_to_component_manager(entity_id, segment_and_slice, component_manager, (*segment_fetch_counts)[pos]);
                             (*slice_added)[pos] = true;
                         }
                     }
@@ -795,7 +794,7 @@ folly::Future<std::vector<SliceAndKey>> read_and_process(
         std::move(processing_unit_indexes),
         std::make_shared<std::vector<std::shared_ptr<Clause>>>(read_query->clauses_))
     .via(&async::cpu_executor())
-    .thenValue([component_manager, read_query, pipeline_context](std::vector<entt::entity>&& processed_entity_ids) {
+    .thenValue([component_manager, read_query, pipeline_context](std::vector<EntityId>&& processed_entity_ids) {
         auto proc = gather_entities<std::shared_ptr<SegmentInMemory>, std::shared_ptr<RowRange>, std::shared_ptr<ColRange>>(*component_manager, std::move(processed_entity_ids));
 
         if (std::any_of(read_query->clauses_.begin(), read_query->clauses_.end(), [](const std::shared_ptr<Clause>& clause) {
