@@ -40,11 +40,13 @@ runs:
         python-version: "3.${{inputs.python3}}"
 
     - name: Install wheel
+      shell: bash
       run: |
         echo ${{env.python_impl_name}}
         ls ${{env.python_impl_name}}
         python -m pip install --force-reinstall  $(ls *${{env.python_impl_name}}*.whl)[Testing] pytest-split
 
     - name: Run proxy test
+      shell: bash
       run: |
         python -m pytest --timeout=3600 -n 1 python/tests/integration/arcticdb/test_arctic.py::test_s3_sts_auth
