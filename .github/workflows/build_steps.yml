@@ -213,13 +213,6 @@ jobs:
         with:
           name: wheel-${{env.CIBW_BUILD}}
           path: wheelhouse/*.whl
-          
-      - name: Run proxy test
-        if: matrix.os == 'linux' && inputs.job_type == 'build-python-wheels'
-        uses: ./.github/actions/run_proxy_test
-        with:
-          python3: ${{inputs.python3}}
-          wheel: wheel-${{env.CIBW_BUILD}}
 
       - name: Discover test directory names
         if: inputs.job_type == 'build-python-wheels'
@@ -264,6 +257,32 @@ jobs:
       python_impl_name: ${{env.python_impl_name}}
       test_dirs: ${{env.test_dirs}}
       cibw_build: ${{env.CIBW_BUILD}}
+
+  proxy_test:
+    uses: ./.github/actions/run_proxy_test
+    needs: [compile]
+    strategy:
+      matrix:
+        # Declaring the dummy fields here to aid the Github Actions linting in VSCode and to provide documentation
+        os: [0] # Decouples the steps from any distro version changes
+        cmake_preset_prefix: [0]
+        cibw_build_suffix: [0]
+        envs: [0]
+        build_dir: [0] # Must be an absolute path
+        vcpkg_installed_dir: [0]
+        vcpkg_packages_dir: [0]
+        symbols: [0] # Glob for symbol symbol files. Used for including in build-python-wheels builds and exclusion on others.
+        do_not_archive: [0]
+        test_services: [0] # Github service containers to spin up for the pytest run
+        container: [0]
+        exclude:
+            - os: 0
+        include:
+            - ${{fromJSON(inputs.matrix)[0]}} # The items after 0 are for tests only     
+    if: github.event.inputs.os == 'linux' && inputs.job_type == 'build-python-wheels'
+    with:
+      python3: ${{inputs.python3}}
+      wheel: wheel-${{needs.compile.outputs.cibw_build}}
 
   stop-ec2-runner:
     needs: [start_ec2_runner, compile]
