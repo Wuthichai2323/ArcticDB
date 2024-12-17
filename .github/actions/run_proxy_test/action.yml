@@ -1,6 +1,5 @@
 name: 'Run proxy test'
 runs-on: ubuntu
-container: ubuntu:22.04
 inputs:
   wheel:             {required: true, type: string, description: The name of the wheel artifact to test }
   python3:           {default: '7', type: string, description: Specifies the version of python for testing }
