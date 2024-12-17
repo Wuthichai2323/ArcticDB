@@ -213,6 +213,13 @@ jobs:
         with:
           name: wheel-${{env.CIBW_BUILD}}
           path: wheelhouse/*.whl
+          
+      - name: Run proxy test
+        if: matrix.os == 'linux' && inputs.job_type == 'build-python-wheels'
+        uses: ./.github/actions/run_proxy_test
+        with:
+          python3: ${{inputs.python3}}
+          wheel: wheel-${{env.CIBW_BUILD}}
 
       - name: Discover test directory names
         if: inputs.job_type == 'build-python-wheels'
@@ -357,13 +364,6 @@ jobs:
           aws_access_key: "${{ secrets.AWS_S3_ACCESS_KEY }}"
           aws_secret_key: "${{ secrets.AWS_S3_SECRET_KEY }}"
           strategy_branch: "${{ env.distinguishing_name }}"
-          
-      - name: Run proxy test
-        if: matrix.os == 'linux'
-        uses: ./.github/actions/run_proxy_test
-        with:
-          python3: ${{inputs.python3}}
-          python_impl_name: ${{env.python_impl_name}}
 
       - name: Run test
         run: |
