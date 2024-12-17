@@ -267,8 +267,7 @@ std::vector<folly::Future<std::optional<AtomKey>>> batch_get_versions_async(
             });
 
         output.push_back(std::move(version_entry_fut)
-             .via(&async::cpu_executor())
-             .thenValue([vq = version_query, sid = *symbol](auto version_or_snapshot) {
+             .thenValueInline([vq = version_query, sid = *symbol](auto version_or_snapshot) {
                  return util::variant_match(version_or_snapshot,
                     [&vq](const std::shared_ptr<VersionMapEntry> &version_map_entry) {
                         return get_key_for_version_query(version_map_entry, vq);
