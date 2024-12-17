@@ -357,6 +357,13 @@ jobs:
           aws_access_key: "${{ secrets.AWS_S3_ACCESS_KEY }}"
           aws_secret_key: "${{ secrets.AWS_S3_SECRET_KEY }}"
           strategy_branch: "${{ env.distinguishing_name }}"
+          
+      - name: Run proxy test
+        if: matrix.os == 'linux'
+        uses: ./.github/actions/run_proxy_test
+        with:
+          python3: ${{inputs.python3}}
+          python_impl_name: ${{env.python_impl_name}}
 
       - name: Run test
         run: |
@@ -367,13 +374,6 @@ jobs:
           CI_MONGO_HOST: mongodb
           HYPOTHESIS_PROFILE: ci_${{matrix.os}}
           PYTEST_XDIST_MODE: ${{inputs.pytest_xdist_mode}}
-
-      - name: Run proxy test
-        if: matrix.os == 'linux'
-        uses: ./.github/actions/run_proxy_test
-        with:
-          python3: ${{inputs.python3}}
-          python_impl_name: ${{env.python_impl_name}}
 
       - name: Collect crash dumps (Windows)
         if: matrix.os == 'windows' && failure()
