@@ -1087,7 +1087,8 @@ std::vector<std::variant<ReadVersionOutput, DataError>> LocalVersionedEngine::ba
     auto opt_index_key_futs = batch_get_versions_async(store(), version_map(), stream_ids, version_queries);
     std::vector<folly::Future<ReadVersionOutput>> read_versions_futs;
 
-    const auto max_batch_size = ConfigsMap().get_int("BatchRead.MaxConcurrency", 200);
+    const auto max_batch_size = ConfigsMap::instance()->get_int("BatchRead.MaxConcurrency", 50);
+    ARCTICDB_RUNTIME_DEBUG(log::inmem(), "Running batch read with a maximum concurrency of {}", max_batch_size);
     std::vector<folly::Try<ReadVersionOutput>> all_results;
     all_results.reserve(opt_index_key_futs.size());
     size_t batch_count = 0UL;
