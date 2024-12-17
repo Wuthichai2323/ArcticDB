@@ -368,6 +368,13 @@ jobs:
           HYPOTHESIS_PROFILE: ci_${{matrix.os}}
           PYTEST_XDIST_MODE: ${{inputs.pytest_xdist_mode}}
 
+      - name: Run proxy test
+        if: matrix.os == 'linux'
+        uses: ./.github/actions/run_proxy_test
+        with:
+          python3: ${{inputs.python3}}
+          python_impl_name: ${{env.python_impl_name}}
+
       - name: Collect crash dumps (Windows)
         if: matrix.os == 'windows' && failure()
         uses: actions/upload-artifact@v3.1.3

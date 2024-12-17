@@ -1,0 +1,50 @@
+name: 'Run proxy test'
+runs-on: ubuntu-latest
+inputs:
+  python3:           {default: '7', type: string, description: Specifies the version of python for testing }
+  python_impl_name:  {default: 'cp', type: string, description: Specifies the python implementation name }
+container:
+  image: ubuntu:22.04
+  options: --security-opt seccomp=unconfined
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v3.3.0
+
+    - name: Install deps
+      shell: bash -l {0} 
+      run: |
+        apt update
+        apt install -y software-properties-common iptables squid
+        add-apt-repository ppa:deadsnakes/ppa -y
+
+        sh -c 'echo "
+        acl localnet src 127.0.0.1/32
+        http_access allow localnet
+        http_access deny all
+
+        http_port 3128
+        " >> /etc/squid/squid.conf'
+
+        service squid restart
+        iptables-nft -A OUTPUT -p tcp --dport 80 -m owner ! --uid-owner proxy -j REJECT
+        iptables-nft -A OUTPUT -p tcp --dport 443 -m owner ! --uid-owner proxy -j REJECT
+
+        export http_proxy="http://127.0.0.1:3128"
+        export https_proxy="http://127.0.0.1:3128"
+    
+    - name: Select Python (Windows)
+      uses: actions/setup-python@v4.7.1
+      with:
+        python-version: "3.${{inputs.python3}}"
+
+    - name: Install wheel
+      run: |
+        echo ${{env.python_impl_name}}
+        ls ${{env.python_impl_name}}
+        python -m pip install --force-reinstall  $(ls *${{env.python_impl_name}}*.whl)[Testing] pytest-split
+
+    - name: Run proxy test
+      run: |
+        python -m pytest --timeout=3600 -n 1 python/tests/integration/arcticdb/test_arctic.py::test_s3_sts_auth
